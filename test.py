@@ -1,7 +1,7 @@
 import time
 from radarclass import RadarDataReader
 
-config_file_path = 'AWR294X_profile_2024_07_04T14_22_44_961.cfg'
+config_file_path = 'config_files/AWR294X_Scatter.cfg'
 radar_data_reader = RadarDataReader(config_file_path)
 
 # Configure the serial ports

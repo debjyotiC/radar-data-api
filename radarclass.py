@@ -294,5 +294,3 @@ class RadarDataReader:
         # Update instance variables
         self.byteBuffer = byteBuffer
         self.byteBufferLength = byteBufferLength
-
-
