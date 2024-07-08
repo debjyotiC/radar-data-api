@@ -26,8 +26,8 @@ def serialConfig(configFileName):
     # Dataport = serial.Serial('/dev/ttyACM1', 921600)
 
     # Windows
-    CLIport = serial.Serial('COM4', 115200)
-    Dataport = serial.Serial('COM5', 852272)
+    CLIport = serial.Serial('/dev/tty.usbmodemRA2902371', 115200)
+    Dataport = serial.Serial('/dev/tty.usbmodemRA2902374', 852272)
 
     # Read the configuration file and send it to the board
     config = [line.rstrip('\r\n') for line in open(configFileName)]

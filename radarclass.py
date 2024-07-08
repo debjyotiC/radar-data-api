@@ -1,7 +1,6 @@
 import numpy as np
 import serial
 import time
-import logging
 
 
 class RadarDataReader:
@@ -12,30 +11,21 @@ class RadarDataReader:
         self.byteBuffer = np.zeros(2 ** 15, dtype='uint8')
         self.byteBufferLength = 0
 
-    def serial_config(self, port_cli, port_data, cli_port_baud, data_port_baud):
-        port_found = False
-
-        while not port_found:
-            try:
-                self.cli_port = serial.Serial(port_cli, cli_port_baud)
-                self.data_port = serial.Serial(port_data, data_port_baud)
-
-                port_found = True
-
-            except serial.SerialException:
-                print("Serial port not found. Retrying in 1 second...")
-                time.sleep(1)
+    def serial_config(self, cli_com, data_com, cli_baud, data_baud, debug=False):
+        self.cli_port = serial.Serial(cli_com, cli_baud)
+        self.data_port = serial.Serial(data_com, data_baud)
 
         # Read the configuration file and send it to the board
         config = [line.rstrip('\r\n') for line in open(self.config_file_name)]
         for i in config:
             self.cli_port.write((i + '\n').encode())
-            print(i)
+            if debug:
+                print(i)
             time.sleep(0.01)
 
         return self.cli_port, self.data_port
 
-    def parse_config_file(self, num_rx, num_tx):
+    def parse_config_file(self, num_rx_ant, num_tx_ant):
         configParameters = {}  # Initialize an empty dictionary to store the configuration parameters
 
         # Read the configuration file and send it to the board
@@ -46,8 +36,8 @@ class RadarDataReader:
             splitWords = i.split(" ")
 
             # Hard code the number of antennas, change if other configuration is used
-            numRxAnt = num_rx
-            numTxAnt = num_tx
+            numRxAnt = num_rx_ant
+            numTxAnt = num_tx_ant
 
             # Get the information about the profile configuration
             if "profileCfg" in splitWords[0]:
@@ -70,11 +60,11 @@ class RadarDataReader:
                 chirpEndIdx = int(splitWords[2])
                 numLoops = int(splitWords[3])
                 numFrames = int(splitWords[4])
-                framePeriodicity = int(splitWords[5])
+                framePeriodicity = float(splitWords[5])
 
         # Combine the read data to obtain the configuration parameters
         numChirpsPerFrame = (chirpEndIdx - chirpStartIdx + 1) * numLoops
-        configParameters["numDopplerBins"] = numChirpsPerFrame / numTxAnt
+        configParameters["numDopplerBins"] = numChirpsPerFrame // numTxAnt
         configParameters["numRangeBins"] = numAdcSamplesRoundTo2
         configParameters["rangeResolutionMeters"] = (3e8 * digOutSampleRate * 1e3) / (
                 2 * freqSlopeConst * 1e12 * numAdcSamples)
@@ -87,11 +77,7 @@ class RadarDataReader:
 
         return configParameters
 
-    def readAndParseData16xx(self, Dataport, configParameters):
-        # Use instance variables instead of globals
-        byteBuffer = self.byteBuffer
-        byteBufferLength = self.byteBufferLength
-
+    def read_radar_data(self, data_port, config_parameters):
         # Constants
         OBJ_STRUCT_SIZE_BYTES = 12
         BYTE_VEC_ACC_MAX_SIZE = 2 ** 15
@@ -101,6 +87,8 @@ class RadarDataReader:
         MMWDEMO_OUTPUT_MSG_AZIMUT_STATIC_HEAT_MAP = 4
         MMWDEMO_OUTPUT_MSG_RANGE_DOPPLER_HEAT_MAP = 5
         maxBufferSize = 2 ** 15
+        tlvHeaderLengthInBytes = 8
+        pointLengthInBytes = 16
         magicWord = [2, 1, 4, 3, 6, 5, 8, 7]
 
         # Initialize variables
@@ -108,27 +96,26 @@ class RadarDataReader:
         dataOK = 0  # Checks if the data has been read correctly
         frameNumber = 0
         detObj = {}
-        tlv_type = 0
 
-        readBuffer = Dataport.read(Dataport.in_waiting)
+        readBuffer = data_port.read(data_port.in_waiting)
         byteVec = np.frombuffer(readBuffer, dtype='uint8')
         byteCount = len(byteVec)
 
         # Check that the buffer is not full, and then add the data to the buffer
-        if (byteBufferLength + byteCount) < maxBufferSize:
-            byteBuffer[byteBufferLength:byteBufferLength + byteCount] = byteVec[:byteCount]
-            byteBufferLength = byteBufferLength + byteCount
+        if (self.byteBufferLength + byteCount) < maxBufferSize:
+            self.byteBuffer[self.byteBufferLength:self.byteBufferLength + byteCount] = byteVec[:byteCount]
+            self.byteBufferLength = self.byteBufferLength + byteCount
 
         # Check that the buffer has some data
-        if byteBufferLength > 16:
+        if self.byteBufferLength > 16:
 
             # Check for all possible locations of the magic word
-            possibleLocs = np.where(byteBuffer == magicWord[0])[0]
+            possibleLocs = np.where(self.byteBuffer == magicWord[0])[0]
 
             # Confirm that is the beginning of the magic word and store the index in startIdx
             startIdx = []
             for loc in possibleLocs:
-                check = byteBuffer[loc:loc + 8]
+                check = self.byteBuffer[loc:loc + 8]
                 if np.all(check == magicWord):
                     startIdx.append(loc)
 
@@ -136,25 +123,26 @@ class RadarDataReader:
             if startIdx:
 
                 # Remove the data before the first start index
-                if 0 < startIdx[0] < byteBufferLength:
-                    byteBuffer[:byteBufferLength - startIdx[0]] = byteBuffer[startIdx[0]:byteBufferLength]
-                    byteBuffer[byteBufferLength - startIdx[0]:] = np.zeros(
-                        len(byteBuffer[byteBufferLength - startIdx[0]:]),
+                if 0 < startIdx[0] < self.byteBufferLength:
+                    self.byteBuffer[:self.byteBufferLength - startIdx[0]] \
+                        = self.byteBuffer[startIdx[0]:self.byteBufferLength]
+                    self.byteBuffer[self.byteBufferLength - startIdx[0]:] = np.zeros(
+                        len(self.byteBuffer[self.byteBufferLength - startIdx[0]:]),
                         dtype='uint8')
-                    byteBufferLength = byteBufferLength - startIdx[0]
+                    self.byteBufferLength = self.byteBufferLength - startIdx[0]
 
                 # Check that there have no errors with the byte buffer length
-                if byteBufferLength < 0:
-                    byteBufferLength = 0
+                if self.byteBufferLength < 0:
+                    self.byteBufferLength = 0
 
                 # word array to convert 4 bytes to a 32-bit number
                 word = [1, 2 ** 8, 2 ** 16, 2 ** 24]
 
                 # Read the total packet length
-                totalPacketLen = np.matmul(byteBuffer[12:12 + 4], word)
+                totalPacketLen = np.matmul(self.byteBuffer[12:12 + 4], word)
 
                 # Check that all the packet has been read
-                if (byteBufferLength >= totalPacketLen) and (byteBufferLength != 0):
+                if (self.byteBufferLength >= totalPacketLen) and (self.byteBufferLength != 0):
                     magicOK = 1
 
         # If magicOK is equal to 1 then process the message
@@ -166,23 +154,23 @@ class RadarDataReader:
             idX = 0
 
             # Read the header
-            magicNumber = byteBuffer[idX:idX + 8]
+            magicNumber = self.byteBuffer[idX:idX + 8]
             idX += 8
-            version = format(np.matmul(byteBuffer[idX:idX + 4], word), 'x')
+            version = format(np.matmul(self.byteBuffer[idX:idX + 4], word), 'x')
             idX += 4
-            totalPacketLen = np.matmul(byteBuffer[idX:idX + 4], word)
+            totalPacketLen = np.matmul(self.byteBuffer[idX:idX + 4], word)
             idX += 4
-            platform = format(np.matmul(byteBuffer[idX:idX + 4], word), 'x')
+            platform = format(np.matmul(self.byteBuffer[idX:idX + 4], word), 'x')
             idX += 4
-            frameNumber = np.matmul(byteBuffer[idX:idX + 4], word)
+            frameNumber = np.matmul(self.byteBuffer[idX:idX + 4], word)
             idX += 4
-            timeCpuCycles = np.matmul(byteBuffer[idX:idX + 4], word)
+            timeCpuCycles = np.matmul(self.byteBuffer[idX:idX + 4], word)
             idX += 4
-            numDetectedObj = np.matmul(byteBuffer[idX:idX + 4], word)
+            numDetectedObj = np.matmul(self.byteBuffer[idX:idX + 4], word)
             idX += 4
-            numTLVs = np.matmul(byteBuffer[idX:idX + 4], word)
+            numTLVs = np.matmul(self.byteBuffer[idX:idX + 4], word)
             idX += 4
-            subFrameNumber = np.matmul(byteBuffer[idX:idX + 4], word)
+            subFrameNumber = np.matmul(self.byteBuffer[idX:idX + 4], word)
             idX += 4
 
             # Read the TLV messages
@@ -192,75 +180,41 @@ class RadarDataReader:
                 word = [1, 2 ** 8, 2 ** 16, 2 ** 24]
 
                 # Check the header of the TLV message
-                try:
-                    tlv_type = np.matmul(byteBuffer[idX:idX + 4], word)
-                    idX += 4
-                    tlv_length = np.matmul(byteBuffer[idX:idX + 4], word)
-                    idX += 4
-                except:
-                    pass
+                tlv_type = np.matmul(self.byteBuffer[idX:idX + 4], word)
+                idX += 4
+                tlv_length = np.matmul(self.byteBuffer[idX:idX + 4], word)
+                idX += 4
 
                 # Read the data depending on the TLV message
                 if tlv_type == MMWDEMO_UART_MSG_DETECTED_POINTS:
 
-                    # word array to convert 4 bytes to a 16-bit number
-                    word = [1, 2 ** 8]
-                    tlv_numObj = np.matmul(byteBuffer[idX:idX + 2], word)
-                    idX += 2
-                    tlv_xyzQFormat = 2 ** np.matmul(byteBuffer[idX:idX + 2], word)
-                    idX += 2
-
                     # Initialize the arrays
-                    rangeIdx = np.zeros(tlv_numObj, dtype='int16')
-                    dopplerIdx = np.zeros(tlv_numObj, dtype='int16')
-                    peakVal = np.zeros(tlv_numObj, dtype='int16')
-                    x = np.zeros(tlv_numObj, dtype='int16')
-                    y = np.zeros(tlv_numObj, dtype='int16')
-                    z = np.zeros(tlv_numObj, dtype='int16')
+                    x = np.zeros(numDetectedObj, dtype=np.float32)
+                    y = np.zeros(numDetectedObj, dtype=np.float32)
+                    z = np.zeros(numDetectedObj, dtype=np.float32)
+                    velocity = np.zeros(numDetectedObj, dtype=np.float32)
 
-                    for objectNum in range(tlv_numObj):
+                    for objectNum in range(numDetectedObj):
                         # Read the data for each object
-                        rangeIdx[objectNum] = np.matmul(byteBuffer[idX:idX + 2], word)
-                        idX += 2
-                        dopplerIdx[objectNum] = np.matmul(byteBuffer[idX:idX + 2], word)
-                        idX += 2
-                        peakVal[objectNum] = np.matmul(byteBuffer[idX:idX + 2], word)
-                        idX += 2
-                        x[objectNum] = np.matmul(byteBuffer[idX:idX + 2], word)
-                        idX += 2
-                        y[objectNum] = np.matmul(byteBuffer[idX:idX + 2], word)
-                        idX += 2
-                        z[objectNum] = np.matmul(byteBuffer[idX:idX + 2], word)
-                        idX += 2
-
-                    # Make the necessary corrections and calculate the rest of the data
-                    rangeVal = rangeIdx * configParameters["rangeIdxToMeters"]
-                    dopplerIdx[dopplerIdx > (configParameters["numDopplerBins"] / 2 - 1)] = dopplerIdx[dopplerIdx > (
-                            configParameters["numDopplerBins"] / 2 - 1)] - 65535
-                    dopplerVal = dopplerIdx * configParameters["dopplerResolutionMps"]
-                    x = x / tlv_xyzQFormat
-                    y = y / tlv_xyzQFormat
-                    z = z / tlv_xyzQFormat
+                        x[objectNum] = self.byteBuffer[idX:idX + 4].view(dtype=np.float32)
+                        idX += 4
+                        y[objectNum] = self.byteBuffer[idX:idX + 4].view(dtype=np.float32)
+                        idX += 4
+                        z[objectNum] = self.byteBuffer[idX:idX + 4].view(dtype=np.float32)
+                        idX += 4
+                        velocity[objectNum] = self.byteBuffer[idX:idX + 4].view(dtype=np.float32)
+                        idX += 4
 
                     # Store the data in the detObj dictionary
-                    detObj = {"numObj": tlv_numObj, "rangeIdx": rangeIdx, "range": rangeVal, "dopplerIdx": dopplerIdx,
-                              "doppler": dopplerVal, "peakVal": peakVal, "x": x, "y": y, "z": z}
-
+                    detObj = {"numObj": numDetectedObj, "x": x, "y": y, "z": z, "velocity": velocity}
                     dataOK = 1
-
-                elif tlv_type == MMWDEMO_UART_MSG_RANGE_PROFILE:
-                    rangeProfile = byteBuffer[idX:idX + (tlv_length - 8)].view(np.uint16)
-                    idX += (tlv_length - 8)
-                    rangeArray = np.array(range(configParameters["numRangeBins"])) * configParameters[
-                        "rangeIdxToMeters"]
-
-
                 elif tlv_type == MMWDEMO_OUTPUT_MSG_RANGE_DOPPLER_HEAT_MAP:
 
                     # Get the number of bytes to read
-                    numBytes = int(2 * configParameters["numRangeBins"] * configParameters["numDopplerBins"])
+                    numBytes = 2 * config_parameters["numRangeBins"] * config_parameters["numDopplerBins"]
+
                     # Convert the raw data to int16 array
-                    payload = byteBuffer[idX:idX + numBytes]
+                    payload = self.byteBuffer[idX:idX + numBytes]
                     idX += numBytes
                     rangeDoppler = payload.view(dtype=np.int16)
 
@@ -270,27 +224,22 @@ class RadarDataReader:
                         continue
 
                     # Convert the range doppler array to a matrix
-                    rangeDoppler = np.reshape(rangeDoppler, (
-                        int(configParameters["numDopplerBins"]), int(configParameters["numRangeBins"])),
+                    rangeDoppler = np.reshape(rangeDoppler,
+                                              (config_parameters["numDopplerBins"], config_parameters["numRangeBins"]),
                                               'F')  # Fortran-like reshape
-                    rangeDoppler = np.append(rangeDoppler[int(len(rangeDoppler) / 2):],
-                                             rangeDoppler[:int(len(rangeDoppler) / 2)], axis=0)
-
-                    print(rangeDoppler)
 
             # Remove already processed data
-            if 0 < idX < byteBufferLength:
+            if 0 < idX < self.byteBufferLength:
                 shiftSize = totalPacketLen
 
-                byteBuffer[:byteBufferLength - shiftSize] = byteBuffer[shiftSize:byteBufferLength]
-                byteBuffer[byteBufferLength - shiftSize:] = np.zeros(len(byteBuffer[byteBufferLength - shiftSize:]),
-                                                                     dtype='uint8')
-                byteBufferLength = byteBufferLength - shiftSize
+                self.byteBuffer[:self.byteBufferLength - shiftSize] = self.byteBuffer[shiftSize:self.byteBufferLength]
+                self.byteBuffer[self.byteBufferLength - shiftSize:] = np.zeros(
+                    len(self.byteBuffer[self.byteBufferLength - shiftSize:]),
+                    dtype='uint8')
+                self.byteBufferLength = self.byteBufferLength - shiftSize
 
                 # Check that there are no errors with the buffer length
-                if byteBufferLength < 0:
-                    byteBufferLength = 0
+                if self.byteBufferLength < 0:
+                    self.byteBufferLength = 0
 
-        # Update instance variables
-        self.byteBuffer = byteBuffer
-        self.byteBufferLength = byteBufferLength
+        return detObj, dataOK
