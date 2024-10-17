@@ -96,6 +96,7 @@ class RadarDataReader:
         dataOK = 0  # Checks if the data has been read correctly
         frameNumber = 0
         detObj = {}
+        rangeDoppler = []
 
         readBuffer = data_port.read(data_port.in_waiting)
         byteVec = np.frombuffer(readBuffer, dtype='uint8')
@@ -227,6 +228,7 @@ class RadarDataReader:
                     rangeDoppler = np.reshape(rangeDoppler,
                                               (config_parameters["numDopplerBins"], config_parameters["numRangeBins"]),
                                               'F')  # Fortran-like reshape
+
 
             # Remove already processed data
             if 0 < idX < self.byteBufferLength:

@@ -7,8 +7,8 @@ config_file_path = 'config_files/AWR294X_Scatter.cfg'
 radar_data_reader = RadarDataReader(config_file_path)
 
 # Configure the serial ports
-port_cli = '/dev/tty.usbmodemRA2902371'
-port_data = '/dev/tty.usbmodemRA2902374'
+port_cli = 'COM17'
+port_data = 'COM10'
 cli_port_baud = 115200
 data_port_baud = 852272
 
@@ -27,7 +27,7 @@ try:
             print(radar_data)
             x = radar_data["x"]
             y = radar_data["y"]
-            # velocity = radar_data["velocity"]
+            velocity = radar_data["velocity"]
 
             plt.clf()
 
@@ -41,9 +41,9 @@ try:
             ax.scatter(theta, r, color='green', s=20)
 
             # Adding annotations for velocity
-            # for i in range(len(x)):
-            #     ax.annotate(f'v={velocity[i]:.2f}', (theta[i], r[i]),
-            #                 textcoords="offset points", xytext=(5, -5), ha='center', color='black')
+            for i in range(len(x)):
+                ax.annotate(f'v={velocity[i]:.2f}', (theta[i], r[i]),
+                            textcoords="offset points", xytext=(5, -5), ha='center', color='black')
 
             # Setting the theta limits to only show the upper sector
             ax.set_thetamin(0)
