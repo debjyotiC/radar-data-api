@@ -7,8 +7,8 @@ config_file_path = 'config_files/AWR294X_Range_Doppler.cfg'
 radar_data_reader = RadarDataReader(config_file_path)
 
 # Configure the serial ports
-port_cli = 'COM17'
-port_data = 'COM10'
+port_cli = '/dev/tty.usbmodemRA2902371'
+port_data = '/dev/tty.usbmodemRA2902374'
 cli_port_baud = 115200
 data_port_baud = 852272
 
@@ -20,12 +20,14 @@ plt.figure(figsize=(6, 6))
 # Continuously read radar data
 try:
     while True:
-        radar_data, frameOk = radar_data_reader.read_radar_data(data_port, cf)
+        range_doppler, range_profile, detected_objects, frameOk = radar_data_reader.read_radar_data(data_port, cf)
 
         if frameOk:
             plt.clf()
-            print(radar_data)
-            plt.contourf(radar_data[:, :128])
+            plt.title("Range doppler plot")
+            plt.contourf(range_doppler)
+            plt.xlabel("Range bins")
+            plt.ylabel("Doppler bins")
             plt.pause(0.5)
 
 except KeyboardInterrupt:

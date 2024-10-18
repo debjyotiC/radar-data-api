@@ -96,6 +96,7 @@ class RadarDataReader:
         dataOK = 0  # Checks if the data has been read correctly
         frameNumber = 0
         detObj = {}
+        rangeProfile = []
         rangeDoppler = []
 
         readBuffer = data_port.read(data_port.in_waiting)
@@ -228,7 +229,15 @@ class RadarDataReader:
                     rangeDoppler = np.reshape(rangeDoppler,
                                               (config_parameters["numDopplerBins"], config_parameters["numRangeBins"]),
                                               'F')  # Fortran-like reshape
+                    rangeDoppler = np.append(rangeDoppler[int(len(rangeDoppler) / 2):],
+                                             rangeDoppler[:int(len(rangeDoppler) / 2)], axis=0)
+                    dataOK = 1
 
+                elif tlv_type == MMWDEMO_UART_MSG_RANGE_PROFILE:
+                    rangeProfile = np.frombuffer(self.byteBuffer[idX:idX + (tlv_length - 8)], dtype=np.uint16)
+                    idX += (tlv_length - 8)
+
+                    dataOK = 1
 
             # Remove already processed data
             if 0 < idX < self.byteBufferLength:
@@ -244,4 +253,4 @@ class RadarDataReader:
                 if self.byteBufferLength < 0:
                     self.byteBufferLength = 0
 
-        return detObj, dataOK
+        return rangeDoppler, rangeProfile, detObj, dataOK
