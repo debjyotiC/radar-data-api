@@ -3,14 +3,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from radarclass import RadarDataReader
 
-config_file_path = 'config_files/AWR294X_Range_Doppler.cfg'
+config_file_path = 'config_files/xwr16xx_range_doppler.cfg'
 radar_data_reader = RadarDataReader(config_file_path)
 
 # Configure the serial ports
-port_cli = '/dev/tty.usbmodemRA2902371'
-port_data = '/dev/tty.usbmodemRA2902374'
+port_cli = '/dev/ttyACM0'
+port_data = '/dev/ttyACM1'
 cli_port_baud = 115200
-data_port_baud = 852272
+data_port_baud = 921600
 
 # Open the serial ports
 cli_port, data_port = radar_data_reader.serial_config(port_cli, port_data, cli_port_baud, data_port_baud)
