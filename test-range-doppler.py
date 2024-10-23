@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from radarclass import RadarDataReader
 
-config_file_path = 'config_files/xwr16xx_range_doppler.cfg'
+config_file_path = 'config_files/x16_range_doppler_heatmap.cfg'
 radar_data_reader = RadarDataReader(config_file_path)
 
 # Configure the serial ports
