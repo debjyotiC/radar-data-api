@@ -1,9 +1,7 @@
-import time
-import numpy as np
 import matplotlib.pyplot as plt
 from radarclass import RadarDataReader
 
-config_file_path = 'config_files/x16_range_profile.cfg'
+config_file_path = 'config_files/x16_range_azimuth_heatmap.cfg'
 radar_data_reader = RadarDataReader(config_file_path)
 
 # Configure the serial ports
@@ -21,14 +19,11 @@ plt.figure(figsize=(6, 6))
 # Continuously read radar data
 try:
     while True:
-        range_doppler, range_profile, detected_objects, frameOk = radar_data_reader.read_radar_data(data_port, cf)
+        range_doppler, range_profile, detected_objects, range_azimuth, frameOk = radar_data_reader.read_radar_data(data_port, cf)
 
         if frameOk:
-            plt.clf()
-            plt.title("Range doppler plot")
-            plt.plot(range_profile)
-            plt.xlabel("Range bins")
-            plt.ylabel("Doppler bins")
+            plt.contourf(range_azimuth["posX"], range_azimuth["posY"], range_azimuth["heatMap"])
+
             plt.pause(0.5)
 
 except KeyboardInterrupt:

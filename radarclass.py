@@ -96,6 +96,7 @@ class RadarDataReader:
         dataOK = 0  # Checks if the data has been read correctly
         frameNumber = 0
         detObj = {}
+        azimMapObject = {}
         rangeProfile = []
         rangeDoppler = []
 
@@ -239,6 +240,50 @@ class RadarDataReader:
 
                     dataOK = 1
 
+                elif tlv_type == MMWDEMO_OUTPUT_MSG_AZIMUT_STATIC_HEAT_MAP:
+
+                    numTxAzimAnt = 2
+                    numRxAnt = 4
+                    numBytes = numTxAzimAnt * numRxAnt * config_parameters["numRangeBins"] * 4;
+
+                    q = self.byteBuffer[idX:idX + numBytes]
+                    # print(q)
+
+                    idX += numBytes
+                    qrows = numTxAzimAnt * numRxAnt
+                    qcols = config_parameters["numRangeBins"]
+                    NUM_ANGLE_BINS = 64
+
+                    real = q[::4] + q[1::4] * 256
+                    imaginary = q[2::4] + q[3::4] * 256
+
+                    real = real.astype(np.int16)
+                    imaginary = imaginary.astype(np.int16)
+
+                    q = real + 1j * imaginary
+
+                    q = np.reshape(q, (qrows, qcols), order="F")
+
+                    Q = np.fft.fft(q, NUM_ANGLE_BINS, axis=0)
+                    QQ = np.fft.fftshift(abs(Q), axes=0);
+                    QQ = QQ.T
+
+                    QQ = QQ[:, 1:]
+                    QQ = np.fliplr(QQ)
+
+                    theta = np.rad2deg(np.arcsin(
+                        np.array(range(-NUM_ANGLE_BINS // 2 + 1, NUM_ANGLE_BINS // 2)) * (2 / NUM_ANGLE_BINS)))
+                    rangeArray = np.array(range(config_parameters["numRangeBins"])) * config_parameters[
+                        "rangeIdxToMeters"]
+
+                    posX = np.outer(rangeArray.T, np.sin(np.deg2rad(theta)))
+                    posY = np.outer(rangeArray.T, np.cos(np.deg2rad(theta)))
+
+                    # Store the data in the azimMapObject dictionary
+                    azimMapObject = {"posX": posX, "posY": posY, "range": rangeArray, "theta": theta, "heatMap": QQ}
+
+                    dataOK = 1
+
             # Remove already processed data
             if 0 < idX < self.byteBufferLength:
                 shiftSize = totalPacketLen
@@ -253,4 +298,4 @@ class RadarDataReader:
                 if self.byteBufferLength < 0:
                     self.byteBufferLength = 0
 
-        return rangeDoppler, rangeProfile, detObj, dataOK
+        return rangeDoppler, rangeProfile, detObj, azimMapObject, dataOK
