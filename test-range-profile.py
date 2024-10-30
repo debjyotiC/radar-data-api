@@ -25,7 +25,7 @@ try:
 
         if frameOk:
             plt.clf()
-            plt.title("Range doppler plot")
+            plt.title("Range profile plot")
             plt.plot(range_profile)
             plt.xlabel("Range bins")
             plt.ylabel("Doppler bins")
